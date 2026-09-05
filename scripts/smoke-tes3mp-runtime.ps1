@@ -9,8 +9,7 @@ param(
     [switch]$WithLocalMaster,
 
     [Alias("BrowserProbeIterations")]
-    [int]$HubProbeIterations = 3,
-
+    [int]$HubProbeIterations = 3
 )
 
 Set-StrictMode -Version Latest

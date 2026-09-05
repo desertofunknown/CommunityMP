@@ -34,13 +34,17 @@ jobs:
       run: |
         git clone --depth 1 https://github.com/microsoft/vcpkg.git deps/vcpkg-gns
         ./deps/vcpkg-gns/bootstrap-vcpkg.sh -disableMetrics
+        # static, like the Linux build: a dynamic GNS leaves the app bundle
+        # referencing @rpath/libGameNetworkingSockets.dylib, which CPack's
+        # fixup_bundle cannot resolve to anything inside the bundle
         if [[ "${MACOS_AMD64}" ]]; then
-          triplet=x64-osx-dynamic
+          triplet=x64-osx
         else
-          triplet=arm64-osx-dynamic
+          triplet=arm64-osx
         fi
-        ./deps/vcpkg-gns/vcpkg install gamenetworkingsockets boost-asio boost-iostreams --triplet "$triplet"
+        ./deps/vcpkg-gns/vcpkg install gamenetworkingsockets --triplet "$triplet"
         echo "GNS_VCPKG_ROOT=${{ github.workspace }}/deps/vcpkg-gns" >> $GITHUB_ENV
+        echo "GNS_VCPKG_TRIPLET=$triplet" >> $GITHUB_ENV
 
     - name: Prime ccache
       uses: hendrikmuhs/ccache-action@v1.2.22

@@ -7,7 +7,13 @@ source ./CI/macos/deps_versions.sh
 brew tap --repair
 brew update --quiet
 
-brew install curl p7zip
+# Homebrew stopped bottling for macOS on Intel in 2026, so `brew install` there
+# rebuilds curl and its openssl dependency from source -- fifteen minutes, and
+# it fails outright when openssl's post-install step trips. Both formulae ship
+# on the runner images already, so only install what is actually missing.
+for formula in curl p7zip; do
+    brew list --versions "$formula" >/dev/null 2>&1 || brew install "$formula"
+done
 
 if [[ "${MACOS_AMD64}" ]]; then
     VCPKG_FILE="vcpkg-x64-osx-dynamic"

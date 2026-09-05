@@ -64,6 +64,16 @@ if (BUILD_TES3MP_CLIENT OR BUILD_TES3MP_SERVER OR BUILD_TES3MP_MASTER)
     set(BUILD_TES3MP_TARGETS ON)
 endif()
 
+# The game executable is renamed for CommunityMP builds (see apps/openmw), so
+# everything that has to name it -- the launcher's Play button, the Start Menu
+# entries CPack generates -- has to agree on that name rather than hardcode
+# "openmw".
+if (BUILD_TES3MP_CLIENT)
+    set(OPENMW_GAME_EXECUTABLE_NAME "communitymp-client")
+else()
+    set(OPENMW_GAME_EXECUTABLE_NAME "openmw")
+endif()
+
 set(OpenGL_GL_PREFERENCE LEGACY)  # Use LEGACY as we use GL2; GLNVD is for GL3 and up.
 
 if (BUILD_LAUNCHER OR BUILD_OPENCS OR BUILD_WIZARD OR BUILD_OPENCS_TESTS)
@@ -298,6 +308,54 @@ endif()
 
 if (BUILD_TES3MP_TARGETS)
     find_package(GameNetworkingSockets CONFIG REQUIRED)
+
+    # Static GNS builds (e.g. vcpkg's x64-linux triplet) only export the _s
+    # target; the unsuffixed name the rest of the tree links against comes from
+    # shared builds. Bridge the two so either flavour works.
+    if (NOT TARGET GameNetworkingSockets::GameNetworkingSockets
+            AND TARGET GameNetworkingSockets::GameNetworkingSockets_s)
+        add_library(GameNetworkingSockets::GameNetworkingSockets INTERFACE IMPORTED)
+        target_link_libraries(GameNetworkingSockets::GameNetworkingSockets
+            INTERFACE GameNetworkingSockets::GameNetworkingSockets_s)
+
+        # A static GNS drags in static protobuf, which has needed Abseil on the
+        # link line since protobuf 22. The GNS package config names protobuf by
+        # path, so nothing pulls Abseil in, and protobuf::libprotobuf (already
+        # defined here by module-mode FindProtobuf) carries none either -- while
+        # re-running find_package(protobuf CONFIG) collides with that export
+        # set. Link the Abseil archives from the same prefix directly, wrapped
+        # in a linker group so their mutual references resolve.
+        if (UNIX)
+            get_filename_component(_gns_prefix "${GameNetworkingSockets_DIR}/../.." ABSOLUTE)
+            # protobuf 6 also needs utf8_range/utf8_validity alongside Abseil
+            file(GLOB _gns_absl_libs
+                "${_gns_prefix}/lib/libabsl_*.a"
+                "${_gns_prefix}/lib/libutf8_*.a")
+
+            # On Apple the GNS package config does not put protobuf itself on the
+            # link line, so its generated message code is left with undefined
+            # google::protobuf::Message symbols. Deliberately not libprotobuf-lite,
+            # which would collide with it.
+            if (APPLE AND EXISTS "${_gns_prefix}/lib/libprotobuf.a")
+                list(INSERT _gns_absl_libs 0 "${_gns_prefix}/lib/libprotobuf.a")
+            endif()
+
+            if (_gns_absl_libs AND APPLE)
+                # ld64 has no --start-group and does not need it: it resolves
+                # static archives without regard to command-line order.
+                # Abseil's time zone lookup calls CoreFoundation on Apple, which
+                # a shared build would have carried for us.
+                target_link_libraries(GameNetworkingSockets::GameNetworkingSockets
+                    INTERFACE ${_gns_absl_libs} "-framework CoreFoundation")
+            elseif (_gns_absl_libs)
+                target_link_libraries(GameNetworkingSockets::GameNetworkingSockets
+                    INTERFACE "-Wl,--start-group" ${_gns_absl_libs} "-Wl,--end-group")
+            else()
+                message(WARNING "No Abseil archives found in ${_gns_prefix}/lib; "
+                    "a static protobuf will fail to link")
+            endif()
+        endif()
+    endif()
 endif()
 
 if(WIN32 AND BUILD_TES3MP_TARGETS)
@@ -342,12 +400,33 @@ function(tes3mp_copy_runtime_dlls target)
             list(APPEND runtime_dlls "$<TARGET_FILE:yaml-cpp>")
         endif()
 
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${runtime_dlls}
-                $<TARGET_FILE_DIR:${target}>
-            COMMAND_EXPAND_LISTS
-        )
+        # Every TES3MP target lands in the same output directory, so giving each
+        # one its own POST_BUILD copy of the same DLLs races on Windows:
+        # concurrent copy_if_different calls collide and the loser fails the
+        # build (masterserver.exe vs bz2.dll). Copy once, in a shared target.
+        # The destination must not be $<TARGET_FILE_DIR:${target}>: that makes
+        # this utility target depend on a consumer while consumers depend on
+        # it, which CMake rejects as a dependency cycle. Executables go to
+        # CMAKE_RUNTIME_OUTPUT_DIRECTORY, so name it directly.
+        set(_tes3mp_runtime_dest "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+        if(NOT _tes3mp_runtime_dest)
+            set(_tes3mp_runtime_dest "${OpenMW_BINARY_DIR}")
+        endif()
+        if(CMAKE_CONFIGURATION_TYPES)
+            set(_tes3mp_runtime_dest "${_tes3mp_runtime_dest}/$<CONFIG>")
+        endif()
+
+        if(NOT TARGET tes3mp_runtime_dlls)
+            add_custom_target(tes3mp_runtime_dlls
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${_tes3mp_runtime_dest}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${runtime_dlls}
+                    "${_tes3mp_runtime_dest}"
+                COMMAND_EXPAND_LISTS
+            )
+        endif()
+
+        add_dependencies(${target} tes3mp_runtime_dlls)
 
         if(OPENSCENEGRAPH_VERSION)
             set(_osg_plugin_dir "")
@@ -365,12 +444,16 @@ function(tes3mp_copy_runtime_dlls target)
                 endif()
             endforeach()
 
-            if(_osg_plugin_dir)
-                add_custom_command(TARGET ${target} POST_BUILD
+            if(_osg_plugin_dir AND NOT TARGET tes3mp_runtime_osg_plugins)
+                add_custom_target(tes3mp_runtime_osg_plugins
                     COMMAND ${CMAKE_COMMAND} -E copy_directory
                         "${_osg_plugin_dir}"
-                        "$<TARGET_FILE_DIR:${target}>/osgPlugins-${OPENSCENEGRAPH_VERSION}"
+                        "${_tes3mp_runtime_dest}/osgPlugins-${OPENSCENEGRAPH_VERSION}"
                 )
+            endif()
+
+            if(TARGET tes3mp_runtime_osg_plugins)
+                add_dependencies(${target} tes3mp_runtime_osg_plugins)
             endif()
         endif()
     endif()
@@ -1079,6 +1162,23 @@ if (APPLE)
     set(OPENCS_PLUGINS ${OPENCS_PLUGINS} "${INSTALLED_OPENCS_APP}/Contents/PlugIns/${QT_COCOA_PLUGIN_GROUP}/${QT_COCOA_PLUGIN_NAME}")
     set(OPENCS_PLUGINS ${OPENCS_PLUGINS} "${INSTALLED_OPENCS_APP}/Contents/PlugIns/${QT_QMACSTYLE_PLUGIN_GROUP}/${QT_QMACSTYLE_PLUGIN_NAME}")
 
+    # BundleUtilities resolves @rpath entries only from directories it is given,
+    # and a dynamic GNS (vcpkg's *-osx-dynamic triplets) leaves the bundle
+    # referencing @rpath/libGameNetworkingSockets.dylib, which fails packaging
+    # with "otool -l failed". Hand it the GNS library directory.
+    set(TES3MP_GNS_FIXUP_DIRS "")
+    set(TES3MP_GNS_FIXUP_LIBS "")
+    if (BUILD_TES3MP_TARGETS AND GameNetworkingSockets_DIR)
+        get_filename_component(_gns_fixup_prefix "${GameNetworkingSockets_DIR}/../.." ABSOLUTE)
+        set(TES3MP_GNS_FIXUP_DIRS "${_gns_fixup_prefix}/lib")
+        # naming the dylibs outright, not just their directory: fixup_bundle
+        # only searches dirs for items it has already failed to resolve, and an
+        # unresolved @rpath item makes it run otool on the literal string
+        file(GLOB TES3MP_GNS_FIXUP_LIBS "${_gns_fixup_prefix}/lib/*.dylib")
+    endif()
+    message(STATUS "TES3MP bundle fixup dirs: '${TES3MP_GNS_FIXUP_DIRS}'")
+    message(STATUS "TES3MP bundle fixup libs: '${TES3MP_GNS_FIXUP_LIBS}'")
+
     install(CODE "
         function(gp_item_default_embedded_path_override item  default_embedded_path_var)
             if (\${item} MATCHES ${OSG_PLUGIN_PREFIX_DIR})
@@ -1087,8 +1187,8 @@ if (APPLE)
             endif()
         endfunction()
 
-        fixup_bundle(\"${INSTALLED_OPENMW_APP}\" \"${PLUGINS}\" \"\")
-        fixup_bundle(\"${INSTALLED_OPENCS_APP}\" \"${OPENCS_PLUGINS}\" \"\")
+        fixup_bundle(\"${INSTALLED_OPENMW_APP}\" \"${PLUGINS};${TES3MP_GNS_FIXUP_LIBS}\" \"${TES3MP_GNS_FIXUP_DIRS}\")
+        fixup_bundle(\"${INSTALLED_OPENCS_APP}\" \"${OPENCS_PLUGINS};${TES3MP_GNS_FIXUP_LIBS}\" \"${TES3MP_GNS_FIXUP_DIRS}\")
         " COMPONENT Runtime)
 
     set(CPACK_PRE_BUILD_SCRIPTS ${CMAKE_SOURCE_DIR}/cmake/SignMacApplications.cmake)
@@ -1191,7 +1291,7 @@ elseif(NOT APPLE)
         endif()
 
         SET(CPACK_GENERATOR "NSIS")
-        SET(CPACK_PACKAGE_EXECUTABLES "communitymp-client;CommunityMP Client")
+        SET(CPACK_PACKAGE_EXECUTABLES "${OPENMW_GAME_EXECUTABLE_NAME};CommunityMP Client")
         IF(BUILD_LAUNCHER)
             SET(CPACK_PACKAGE_EXECUTABLES "${CPACK_PACKAGE_EXECUTABLES};openmw-launcher;OpenMW Launcher")
         ENDIF(BUILD_LAUNCHER)

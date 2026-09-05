@@ -238,7 +238,7 @@ if(BUILD_OPENMW)
     target_link_libraries(openmw openmw-client-core)
 
     if(BUILD_TES3MP_CLIENT)
-        set_target_properties(openmw PROPERTIES OUTPUT_NAME communitymp-client)
+        set_target_properties(openmw PROPERTIES OUTPUT_NAME ${OPENMW_GAME_EXECUTABLE_NAME})
         if(WIN32)
             set(OPENMW_MP_LEGACY_CLIENT_EXECUTABLE "tes3mp.exe")
         else()

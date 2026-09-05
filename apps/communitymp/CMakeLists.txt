@@ -39,6 +39,12 @@ endforeach()
 if (WIN32)
     install(TARGETS communitymp RUNTIME DESTINATION ".")
     install(FILES ${COMMUNITYMP_LAUNCH_SHORTCUTS} DESTINATION ".")
+elseif (APPLE)
+    # BINDIR and DATAROOTDIR are only defined in the elseif(UNIX) branch of the
+    # top-level CMakeLists, so on macOS these install() calls would be given an
+    # empty DESTINATION and fail to configure. Nothing is needed here anyway:
+    # CMAKE_RUNTIME_OUTPUT_DIRECTORY already points inside the app bundle, so
+    # the executable and its launch scripts are picked up by the bundle.
 else()
     install(TARGETS communitymp RUNTIME DESTINATION "${BINDIR}")
     install(PROGRAMS

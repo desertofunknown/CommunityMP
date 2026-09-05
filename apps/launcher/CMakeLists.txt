@@ -74,6 +74,11 @@ target_link_libraries(openmw-launcher
 
 target_link_libraries(openmw-launcher Qt::Widgets Qt::Core Qt::Svg)
 
+# The Play button launches the game executable by name, and that name changes
+# when the CommunityMP client layer is built.
+target_compile_definitions(openmw-launcher
+    PRIVATE OPENMW_GAME_EXECUTABLE_NAME="${OPENMW_GAME_EXECUTABLE_NAME}")
+
 if (WIN32)
     target_sources(openmw-launcher PRIVATE ${CMAKE_SOURCE_DIR}/files/windows/other-apps.manifest)
 endif()

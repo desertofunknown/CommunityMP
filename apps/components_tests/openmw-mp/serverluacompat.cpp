@@ -13247,6 +13247,10 @@ namespace
                 end
             }
 
+            -- this exercises the legacy actor-list request, which is skipped while
+            -- cppClientActorAuthority is on, as it is by default
+            config.cppClientActorAuthority = false
+
             local cell = BaseCell("Balmora")
             cell.authority = 1
             cell.visitors = { 1 }
@@ -18880,7 +18884,9 @@ namespace
                 GetCaseInsensitiveFilename = function(folderPath, filename)
                     table.insert(caseInsensitiveFilenameCalls, folderPath .. "|" .. filename)
                     return "invalid"
-                end
+                end,
+                LogMessage = function() end,
+                LogAppend = function() end
             }
             class = require("classy")
             require("utils")

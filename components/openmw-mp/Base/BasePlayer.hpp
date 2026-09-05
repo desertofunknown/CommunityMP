@@ -931,10 +931,15 @@ namespace mwmp
         ESM::Position previousCellPosition = {};
         ESM::Position momentum = {};
         ESM::Cell cell;
-        ESM::NPC npc;
+        // value-initialized: the server asks a client for BaseInfo at connect,
+        // long before chargen fills this in, and ESM::NPC::mFlags has no default
+        // initializer -- bit 0 of it is ESM::NPC::Female
+        ESM::NPC npc{};
         ESM::NpcStats npcStats;
         ESM::Creature creature;
-        ESM::CreatureStats creatureStats;
+        // value-initialised: ESM::CreatureStats declares plain members such as
+        // bool mDead with no initialiser, and acceptStatsDynamicPacket reads mDead
+        ESM::CreatureStats creatureStats{};
         std::uint32_t statsDynamicSequence = 0;
         std::uint32_t acceptedStatsDynamicSequence = 0;
         ESM::StatState<float> acceptedStatsDynamic[3] = {};

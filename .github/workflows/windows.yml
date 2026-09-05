@@ -131,7 +131,11 @@ jobs:
     - name: Copy missing DLLs
       run: |
         cp ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/Release/MyGUIEngine.dll ${{ github.workspace }}/build
-        cp -Filter *.dll -Recurse ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/osgPlugins-3.6.5 ${{ github.workspace }}/build
+        # copy the plugin directory's contents, not the directory: CMake has
+        # already created build/osgPlugins-3.6.5 and Copy-Item -Recurse fails
+        # when the destination directory exists
+        New-Item -ItemType Directory -Force -Path ${{ github.workspace }}/build/osgPlugins-3.6.5 | Out-Null
+        cp -Filter *.dll -Recurse -Force ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/osgPlugins-3.6.5/* ${{ github.workspace }}/build/osgPlugins-3.6.5
         cp ${{ github.workspace }}/deps/vcpkg-x64-windows-${{ inputs.msvc }}-${{ env.VCPKG_TAG }}/installed/x64-windows/bin/*.dll ${{ github.workspace }}/build
 
     - name: Copy Qt DLLs

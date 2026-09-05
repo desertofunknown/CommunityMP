@@ -22,6 +22,10 @@
 #include "importpage.hpp"
 #include "settingspage.hpp"
 
+#ifndef OPENMW_GAME_EXECUTABLE_NAME
+#define OPENMW_GAME_EXECUTABLE_NAME "openmw"
+#endif
+
 namespace
 {
     constexpr const char* toolBarStyle = "QToolBar { border: 0px; } QToolButton { min-width: 70px }";
@@ -594,7 +598,7 @@ void Launcher::MainDialog::play()
 
     // Launch the game detached
 
-    if (mGameInvoker->startProcess(QLatin1String("openmw"), true))
+    if (mGameInvoker->startProcess(QLatin1String(OPENMW_GAME_EXECUTABLE_NAME), true))
         return qApp->quit();
 }
 

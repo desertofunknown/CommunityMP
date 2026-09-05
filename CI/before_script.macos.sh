@@ -83,7 +83,17 @@ declare -a BUILD_OPTS=(
 -D BUILD_TES3MP_CLIENT=TRUE
 -D BUILD_TES3MP_SERVER=TRUE
 -D BUILD_TES3MP_BROWSER=TRUE
--D BUILD_TES3MP_MASTER=TRUE
+# The master server pulls in Boost.Asio through SimpleWeb, which is not part
+# of the OpenMW dependency bundle and would mean installing a second Boost
+# next to it. It is an optional service, not part of the client deliverable.
+-D BUILD_TES3MP_MASTER=FALSE
+# The unified launcher links openmw-client-core and tes3mp-server-core
+# together, and each defines its own mwmp::ActorProcessor,
+# mwmp::ObjectProcessor, mwmp::PlayerProcessor, mwmp::WorldstateProcessor and
+# mwmp::ProcessorInitializer. GNU ld and MSVC silently keep one of each; ld64
+# rejects the duplicates outright. Leave the launcher out on macOS until the
+# name collision is resolved -- the client and server binaries are unaffected.
+-D BUILD_COMMUNITYMP_LAUNCHER=FALSE
 -G"Unix Makefiles"
 )
 
@@ -104,7 +114,10 @@ DEPENDENCIES_INSTALLED_PATH="$DEPENDENCIES_ROOT_PATH/installed/$VCPKG_TARGET_TRI
 CMAKE_PREFIX_PATH_VALUE="$DEPENDENCIES_INSTALLED_PATH;$QT_PATH"
 
 if [[ -n "${GNS_VCPKG_ROOT:-}" ]]; then
-    CMAKE_PREFIX_PATH_VALUE="$CMAKE_PREFIX_PATH_VALUE;$GNS_VCPKG_ROOT/installed/$VCPKG_TARGET_TRIPLET"
+    # GNS is built with its own triplet, which is not the one used for the
+    # OpenMW dependency bundle
+    GNS_TRIPLET="${GNS_VCPKG_TRIPLET:-$VCPKG_TARGET_TRIPLET}"
+    CMAKE_PREFIX_PATH_VALUE="$CMAKE_PREFIX_PATH_VALUE;$GNS_VCPKG_ROOT/installed/$GNS_TRIPLET"
 fi
 
 CMAKE_CONF_OPTS+=(
